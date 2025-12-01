@@ -8,6 +8,8 @@ services:
     environment:
       - xpack.security.enabled=false
       - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+
     ulimits:
       memlock:
         soft: -1
@@ -41,8 +43,8 @@ services:
       - kibana
     environment:
       - ELASTICSEARCH_HOST=http://elasticsearch:9200
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - OLLAMA_MODEL=mistral
+      - OLLAMA_HOST=http://172.20.82.62:11434
+      - OLLAMA_MODEL=phi3:mini
     ports:
       - "8000:8000"
     volumes:
@@ -55,8 +57,8 @@ services:
       - elasticsearch
     environment:
       - ELASTICSEARCH_HOST=http://elasticsearch:9200
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - OLLAMA_MODEL=mistral
+      - OLLAMA_HOST=http://172.20.82.62:11434
+      - OLLAMA_MODEL=phi3:mini
     ports:
       - "8501:8501"
     volumes:

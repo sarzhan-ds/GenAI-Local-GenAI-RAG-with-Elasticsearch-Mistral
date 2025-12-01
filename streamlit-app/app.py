@@ -1,4 +1,5 @@
 import streamlit as st
+from dotenv import load_dotenv
 import os
 import httpx
 from llama_index.core import VectorStoreIndex, QueryBundle, Settings
@@ -7,26 +8,49 @@ from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.elasticsearch import ElasticsearchStore
 from llama_index.core.vector_stores.types import MetadataFilters, ExactMatchFilter
 from llama_index.core.query_engine import RetrieverQueryEngine
+from elasticsearch import AsyncElasticsearch
 
+load_dotenv()  
+
+
+print(f"DEBUG: ES_HOST = {os.getenv('ELASTICSEARCH_HOST')}")
+print(f"DEBUG: OLLAMA_HOST = {os.getenv('OLLAMA_HOST')}")
+print(f"DEBUG: MODEL_NAME = {os.getenv('OLLAMA_MODEL')}")
 # --- Config ---
-ES_HOST = os.getenv("ELASTICSEARCH_HOST")
-OLLAMA_HOST = os.getenv("OLLAMA_HOST")
-MODEL_NAME = os.getenv("OLLAMA_MODEL")
+ES_HOST = os.getenv("ELASTICSEARCH_HOST", "http://localhost:9200")  
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+LLM_MODEL = os.getenv("OLLAMA_MODEL", "phi3:mini")
+EMBED_MODEL = "nomic-embed-text"  
+
+
+es_client = AsyncElasticsearch([ES_HOST])
 
 # --- Elasticsearch vector store ---
 es_vector_store = ElasticsearchStore(
-    index_name="student_cvs",
-    vector_field="vector",
-    text_field="student_cvs",
-    es_url=ES_HOST
+    index_name="cvs",              
+    vector_field="embedding",      
+    text_field="text",             
+    es_client=es_client
 )
 
 # --- HTTP + Embeddings + LLM setup ---
-custom_timeout = httpx.Timeout(connect=60.0, read=120.0, write=60.0, pool=60.0)
+custom_timeout = httpx.Timeout(connect=60.0, read=300.0, write=60.0, pool=60.0)  # ← Збільшили read до 300s
 custom_http_client = httpx.Client(timeout=custom_timeout)
 
-local_llm = Ollama(model=MODEL_NAME, base_url=OLLAMA_HOST, http_client=custom_http_client)
-Settings.embed_model = OllamaEmbedding(MODEL_NAME, base_url=OLLAMA_HOST)
+local_llm = Ollama(
+    model=LLM_MODEL, 
+    base_url=OLLAMA_HOST, 
+    request_timeout=300.0,
+    context_window=4096,      # ← Обмежуємо контекст
+    num_ctx=4096              # ← Для Ollama
+)
+
+
+Settings.embed_model = OllamaEmbedding(
+    model_name=EMBED_MODEL,  # ← Використовуємо nomic-embed-text
+    base_url=OLLAMA_HOST
+)
+
 
 # --- Build index once ---
 index = VectorStoreIndex.from_vector_store(es_vector_store)
@@ -66,7 +90,7 @@ if prompt:
         filters = MetadataFilters(filters=[
             ExactMatchFilter(key="name", value=selected_name.strip())
         ])
-        retriever = index.as_retriever(similarity_top_k=10, filters=filters)
+        retriever = index.as_retriever(similarity_top_k=3, filters=filters)
         
         # ✅ Build query engine manually using from_args
         query_engine = RetrieverQueryEngine.from_args(
@@ -78,7 +102,8 @@ if prompt:
     else:
         query_engine = index.as_query_engine(
             llm=local_llm,
-            similarity_top_k=5
+            similarity_top_k=3,           # ← Менше документів
+            response_mode="compact"       # ← Компактний режим
         )
         mode_label = "🌐 No filter applied"
 
